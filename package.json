@@ -1,0 +1,21 @@
+{
+  "name": "story-boy-cast",
+  "version": "1.0.0",
+  "private": true,
+  "description": "004-少年夜话：Cloudflare Worker 每日生成男孩视角故事+男声音频并推送到 Telegram",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test:push": "wrangler dev --test-scheduled && curl http://localhost:8787/test"
+  },
+  "devDependencies": {
+    "wrangler": "^3.0.0"
+  },
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}

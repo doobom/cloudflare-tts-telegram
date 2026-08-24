@@ -1,0 +1,22 @@
+name = "story-boy-cast"
+main = "src/index.js"
+compatibility_date = "2025-01-01"
+
+# Workers AI 绑定（文本生成）
+[ai]
+binding = "AI"
+
+# KV 存档（防重发 / 历史）。先执行：npx wrangler kv namespace create STORY_KV
+[[kv_namespaces]]
+binding = "STORY_KV"
+id = "REPLACE_WITH_KV_ID"
+
+[vars]
+TEXT_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
+TTS_VOICE = "zh-CN-YunxiaNeural"   # 云夏（男孩）；也可 zh-CN-YunxiNeural 等
+# 支持多个 Chat ID，逗号分隔
+TELEGRAM_CHAT_IDS = "REPLACE_WITH_CHAT_ID"
+
+# 每天北京时间 20:00 = UTC 12:00（中国无夏令时，全年稳定）
+[triggers]
+crons = ["0 12 * * *"]

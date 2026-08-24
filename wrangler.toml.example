@@ -1,0 +1,22 @@
+name = "story-boy-cast"
+main = "src/index.js"
+compatibility_date = "2025-01-01"
+
+# Workers AI 绑定
+[ai]
+binding = "AI"
+
+# KV 存档（防重发 / 历史）
+[[kv_namespaces]]
+binding = "STORY_KV"
+id = "<your kv id>"
+
+[vars]
+TEXT_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
+TTS_VOICE = "zh-CN-YunxiaNeural"
+# 支持多个 Chat ID，逗号分隔（环境变量）
+TELEGRAM_CHAT_IDS = "<your tg id>"
+
+# 每天北京时间 20:00 = UTC 12:00（中国无夏令时，全年稳定）
+[triggers]
+crons = ["0 12 * * *"]

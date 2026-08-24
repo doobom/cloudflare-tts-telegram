@@ -1,0 +1,8 @@
+# 密钥 / 本地变量，切勿提交
+.dev.vars
+.env
+node_modules/
+.wrangler/
+.webhook-secret
+wrangler.toml
+output/
