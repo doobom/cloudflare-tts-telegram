@@ -21,11 +21,11 @@ no API key), and pushes text + audio to Telegram.
 1. **Scaffold** the Worker from `assets/worker-template.js` and `assets/wrangler-template.toml`.
 2. **Configure** `wrangler.toml`: set `TELEGRAM_CHAT_IDS` (comma-separated, supports multiple) and the TTS voice.
 3. **Provision** the KV namespace (`wrangler kv namespace create STORY_KV`) and paste its id into `wrangler.toml`.
-4. **Set secrets**: `wrangler secret put TELEGRAM_BOT_TOKEN`, and optionally `TG_WEBHOOK_SECRET`.
+4. **Set secrets**: `wrangler secret put TELEGRAM_BOT_TOKEN`, `wrangler secret put ADMIN_TOKEN` (token-gate for `/test`; if unset, `/test` is disabled), and optionally `TG_WEBHOOK_SECRET`.
 5. **Deploy**: `wrangler deploy` (Cron `0 12 * * *` == Beijing 20:00, since Workers Cron is UTC and China has no DST).
 6. **Register the webhook** for `/story` manual trigger:
    `curl "https://api.telegram.org/bot<TOKEN>/setWebhook?url=<WORKER_URL>/webhook&secret_token=<TG_WEBHOOK_SECRET>"`
-7. **Verify** with `GET /test` (force-send, bypasses dedup) and `GET /latest`.
+7. **Verify**: `GET /test?token=<ADMIN_TOKEN>` (force-send, bypasses dedup) and `GET /latest`. Prefer Telegram `/story` for routine manual triggering.
 
 ## Critical gotchas (read before coding)
 
@@ -36,6 +36,7 @@ no API key), and pushes text + audio to Telegram.
 - **Workers AI text output shape is unstable** — `env.AI.run` sometimes returns `{response: "…"}` and sometimes OpenAI-style `{choices:[{message:{content}}]}`. Normalize with `extractContent()` (already in the template).
 - **Wrangler deploy may fail with `EPERM: operation not permitted, open 'node_modules/.cache/wrangler/wrangler-account.json'`** when the sandbox locks that file. Workaround: before each deploy run `mv node_modules/.cache "node_modules/.cache_x$(date +%H%M%S)"`.
 - **Telegram**: send the MP3 via `sendAudio` (FormData + `File`) and the story via `sendMessage`; use `audio/mpeg` MIME, not `audio/wav`.
+- **Secure the HTTP trigger**: `/test` is a public endpoint that generates + pushes, so token-gate it with `ADMIN_TOKEN` (the template's `isAdmin()`). Telegram `/story` is already safe (webhook `secret_token` + chat-id allowlist) — recommend it as the routine manual trigger.
 
 ## Resources
 

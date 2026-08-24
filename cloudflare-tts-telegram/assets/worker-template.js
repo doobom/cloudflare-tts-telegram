@@ -27,6 +27,15 @@ function getChatIds(env) {
 function isAuthorized(env, chatId) {
   return getChatIds(env).some(id => String(id) === String(chatId));
 }
+// /test 鉴权：需要 ADMIN_TOKEN（secret）；未配置则禁用。支持 ?token= / X-Admin-Token / Authorization: Bearer。
+function isAdmin(request, env) {
+  const expected = env.ADMIN_TOKEN;
+  if (!expected) return false;
+  const q = new URL(request.url).searchParams.get("token") || "";
+  const h = request.headers.get("X-Admin-Token") || (request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
+  const got = q || h || "";
+  return got.length === expected.length && got === expected;
+}
 function uuidHex() { return crypto.randomUUID().replace(/-/g, ""); }
 async function sha256Hex(str) {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(str));
@@ -210,6 +219,9 @@ export default {
     const url = new URL(request.url);
     const path = url.pathname;
     if (path === "/test") {
+      if (!isAdmin(request, env)) {
+        return new Response(JSON.stringify({ error: "未授权：/test 需要 token（未配置 ADMIN_TOKEN 或 token 错误）" }), { status: 403, headers: { "Content-Type": "application/json" } });
+      }
       try {
         const r = await runOnce(env, { force: true });
         return new Response(JSON.stringify(r, null, 2), { headers: { "Content-Type": "application/json" } });

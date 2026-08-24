@@ -39,6 +39,18 @@ function getChatIds(env) {
 function isAuthorized(env, chatId) {
   return getChatIds(env).some((id) => String(id) === String(chatId));
 }
+// /test 鉴权：需要 ADMIN_TOKEN（secret）。未配置则视为禁用（安全默认）。
+// 支持 ?token= 查询参数 或 X-Admin-Token / Authorization: Bearer 请求头。
+function isAdmin(request, env) {
+  const expected = env.ADMIN_TOKEN;
+  if (!expected) return false;
+  const q = new URL(request.url).searchParams.get("token") || "";
+  const h =
+    request.headers.get("X-Admin-Token") ||
+    (request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
+  const got = q || h || "";
+  return got.length === expected.length && got === expected;
+}
 function uuidHex() {
   return crypto.randomUUID().replace(/-/g, "");
 }
@@ -333,6 +345,12 @@ export default {
     const path = url.pathname;
 
     if (path === "/test") {
+      if (!isAdmin(request, env)) {
+        return new Response(
+          JSON.stringify({ error: "未授权：/test 需要 token（未配置 ADMIN_TOKEN 或 token 错误）。日常请用 Telegram /story 触发。" }),
+          { status: 403, headers: { "Content-Type": "application/json" } }
+        );
+      }
       try {
         const r = await runOnce(env, { force: true });
         return new Response(JSON.stringify(r, null, 2), {
@@ -344,39 +362,6 @@ export default {
           { headers: { "Content-Type": "application/json" } }
         );
       }
-    }
-
-    if (path === "/tts") {
-      const gec = await secMsGec();
-      const wsUrl =
-        `${EDGE_WSS}?TrustedClientToken=${TRUSTED_CLIENT_TOKEN}` +
-        `&Sec-MS-GEC=${gec}&Sec-MS-GEC-Version=1-${CHROMIUM_VERSION}&ConnectionId=${uuidHex()}`;
-      const ORIGIN = "chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold";
-      const combos = {
-        full: { "Upgrade": "websocket", "User-Agent": EDGE_UA, "Origin": ORIGIN, "Cookie": `muid=${uuidHex().toUpperCase()};` },
-        noCookie: { "Upgrade": "websocket", "User-Agent": EDGE_UA, "Origin": ORIGIN },
-        uaOrigin: { "Upgrade": "websocket", "User-Agent": EDGE_UA, "Origin": ORIGIN },
-        uaOnly: { "Upgrade": "websocket", "User-Agent": EDGE_UA },
-        upgradeOnly: { "Upgrade": "websocket" },
-      };
-      const out = {};
-      for (const [k, h] of Object.entries(combos)) {
-        try {
-          const resp = await fetch(wsUrl, { headers: h });
-          if (resp.webSocket) {
-            out[k] = "HANDSHAKE_OK";
-            resp.webSocket.accept();
-            resp.webSocket.close();
-          } else {
-            out[k] = `non-101 status=${resp.status}`;
-          }
-        } catch (e) {
-          out[k] = "THROW: " + (e?.message || String(e));
-        }
-      }
-      return new Response(JSON.stringify(out, null, 2), {
-        headers: { "Content-Type": "application/json" },
-      });
     }
 
     if (path === "/latest") {

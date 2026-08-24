@@ -5,7 +5,7 @@
 连同文本一起推送到 **Telegram**（支持多个 Chat）。
 
 > 维护人：沐弦 ｜ 创建：2026-08-24 ｜ 状态：🟢 已上线
-> Worker：`https://story-boy-cast.dunp.workers.dev` ｜ Cron：`0 12 * * *`（UTC = 北京 20:00）
+> Worker：`https://story-boy-cast.xxxxxx.workers.dev` ｜ Cron：`0 12 * * *`（UTC = 北京 20:00）
 
 ---
 
@@ -22,7 +22,7 @@
 | 男孩的语音 | 文本用男孩第一人称口吻写 + 男声（云夏）朗读 |
 | 标题+风格标签 | 音频 caption 带「标题 + 风格」 |
 | Telegram 手动触发 | 给机器人发 `/story` 或 `/start` 立即生成推送（webhook） |
-| HTTP 手动触发 | `GET /test` 立即试发（强制，绕过防重发） |
+| HTTP 手动触发 | `GET /test?token=<ADMIN_TOKEN>` 立即试发（强制，绕过防重发；需 token 鉴权） |
 | KV 存档防重发 | KV 记录「最近发送日期」，同一天 Cron 只发一次；`/latest` 查最近一期 |
 
 ---
@@ -68,9 +68,11 @@ npx wrangler kv namespace create STORY_KV
 
 # 2. 写入 Telegram Bot Token（secret）
 npx wrangler secret put TELEGRAM_BOT_TOKEN
-# 3. 在 wrangler.toml [vars] 里配置 TELEGRAM_CHAT_IDS（逗号分隔，支持多个）
+# 3. 写入 /test 鉴权 token（secret，可选：不配置则 /test 禁用）
+npx wrangler secret put ADMIN_TOKEN
+# 4. 在 wrangler.toml [vars] 里配置 TELEGRAM_CHAT_IDS（逗号分隔，支持多个）
 
-# 4. 部署
+# 5. 部署
 npx wrangler deploy
 ```
 
@@ -85,10 +87,10 @@ curl "https://api.telegram.org/bot<TOKEN>/setWebhook?url=<WORKER_URL>/webhook&se
 ## 三、本地调试
 
 ```bash
-cp .dev.vars.example .dev.vars   # 填入真实 token / chat ids
+cp .dev.vars.example .dev.vars   # 填入真实 token / chat ids / ADMIN_TOKEN
 npx wrangler dev
-curl http://localhost:8787/test       # 立即触发一次
-curl http://localhost:8787/latest     # 最近一期
+curl "http://localhost:8787/test?token=<ADMIN_TOKEN>"   # 立即触发一次（需 token）
+curl http://localhost:8787/latest                       # 最近一期
 ```
 
 ---
