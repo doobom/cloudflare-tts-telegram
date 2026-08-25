@@ -1,14 +1,14 @@
 ---
 name: cloudflare-tts-telegram
-description: Deploy a Cloudflare Worker that generates text via Workers AI and Chinese male-voice audio via Microsoft Edge TTS, then pushes both to Telegram on a Cron schedule (Beijing time) with manual trigger via Telegram /story command and an HTTP /test endpoint. Use this skill when the user wants a Cloudflare-hosted bot that periodically generates and pushes text + audio (daily stories, bedtime readings, narration, voice alerts) to one or more Telegram chats.
+description: Deploy a Cloudflare Worker that generates text via Workers AI and male-voice audio (Chinese and English) via Microsoft Edge TTS, then pushes both to Telegram on a Cron schedule (Beijing time) with manual trigger via Telegram /story (Chinese) and /story-en (English) commands plus an HTTP /test endpoint. Use this skill when the user wants a Cloudflare-hosted bot that periodically generates and pushes text + audio (daily stories, bedtime readings, narration, voice alerts) to one or more Telegram chats.
 agent_created: true
 ---
 
 # Cloudflare Worker → TTS → Telegram
 
 Build and deploy a single Cloudflare Worker that, on a schedule or on demand,
-generates a piece of text, synthesizes it to Chinese male-voice audio (free,
-no API key), and pushes text + audio to Telegram.
+generates a piece of text (Chinese or English), synthesizes it to male-voice
+audio (free, no API key), and pushes text + audio to Telegram.
 
 ## When to use
 
@@ -37,6 +37,7 @@ no API key), and pushes text + audio to Telegram.
 - **Wrangler deploy may fail with `EPERM: operation not permitted, open 'node_modules/.cache/wrangler/wrangler-account.json'`** when the sandbox locks that file. Workaround: before each deploy run `mv node_modules/.cache "node_modules/.cache_x$(date +%H%M%S)"`.
 - **Telegram**: send the MP3 via `sendAudio` (FormData + `File`) and the story via `sendMessage`; use `audio/mpeg` MIME, not `audio/wav`.
 - **Secure the HTTP trigger**: `/test` is a public endpoint that generates + pushes, so token-gate it with `ADMIN_TOKEN` (the template's `isAdmin()`). Telegram `/story` is already safe (webhook `secret_token` + chat-id allowlist) — recommend it as the routine manual trigger.
+- **Bilingual (zh/en)**: `generateStory`/`edgeTts` take a `lang` param to switch the prompt, style/name pools, SSML `xml:lang` (`zh-CN`/`en-US`), and voice (`TTS_VOICE` vs `TTS_VOICE_EN`). Telegram commands: `/story` = Chinese, `/story-en` = English; HTTP: `/test?token=…&lang=en`.
 
 ## Resources
 

@@ -13,7 +13,8 @@ id = "REPLACE_WITH_KV_ID"
 
 [vars]
 TEXT_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
-TTS_VOICE = "zh-CN-YunxiaNeural"   # 云夏（男孩）；也可 zh-CN-YunxiNeural 等
+TTS_VOICE = "zh-CN-YunxiaNeural"     # 中文男孩声（云夏）
+TTS_VOICE_EN = "en-US-GuyNeural"     # 英文男声
 # 支持多个 Chat ID，逗号分隔
 TELEGRAM_CHAT_IDS = "REPLACE_WITH_CHAT_ID"
 

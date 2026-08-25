@@ -15,13 +15,13 @@
 |------|------|
 | 部署到 Cloudflare Worker | 单 Worker，`wrangler deploy` |
 | 用 Cloudflare AI | Workers AI 生成故事文本（`@cf/meta/llama-3.3-70b-instruct-fp8-fast`） |
-| 中文男声 TTS | Microsoft Edge TTS（免费、无需 key），男声 `zh-CN-YunxiaNeural`（云夏，男孩音） |
+| 男声 TTS | Microsoft Edge TTS（免费、无需 key）：中文 `zh-CN-YunxiaNeural`（云夏），英文 `en-US-GuyNeural` |
 | 推送到 Telegram | Bot API `sendAudio`（MP3）+ `sendMessage`，支持多 Chat ID |
 | 每天定时 300 字故事 + 音频 | `scheduled()` + Cron `0 12 * * *`（= 北京 20:00，中国无夏令时） |
 | 风格随机、排除恐怖 | 10 种温暖风格池，system 指令禁止恐怖/血腥/惊悚/暴力/灵异 |
 | 男孩的语音 | 文本用男孩第一人称口吻写 + 男声（云夏）朗读 |
 | 标题+风格标签 | 音频 caption 带「标题 + 风格」 |
-| Telegram 手动触发 | 给机器人发 `/story` 或 `/start` 立即生成推送（webhook） |
+| Telegram 手动触发 | 发 `/story`（中文）或 `/story-en`（英文）立即生成推送（webhook） |
 | HTTP 手动触发 | `GET /test?token=<ADMIN_TOKEN>` 立即试发（强制，绕过防重发；需 token 鉴权） |
 | KV 存档防重发 | KV 记录「最近发送日期」，同一天 Cron 只发一次；`/latest` 查最近一期 |
 
@@ -101,7 +101,9 @@ curl http://localhost:8787/latest                       # 最近一期
   未开放则改 `@cf/meta/llama-3.1-8b-instruct`。
 - **男声音色** `TTS_VOICE`：默认 `zh-CN-YunxiaNeural`（云夏，男孩）；
   也可改 `zh-CN-YunxiNeural`（云希，青年男）等 Edge TTS 中文男声。
-- **风格池 / 男孩名字池**：`src/index.js` 顶部 `STORY_STYLES` / `BOY_NAMES`。
+- **英文男声音色** `TTS_VOICE_EN`：默认 `en-US-GuyNeural`（年轻男声）；
+  也可改 `en-US-AndrewNeural` / `en-US-BrianNeural` 等英文男声。
+- **风格池 / 男孩名字池**：`src/index.js` 顶部 `STORY_STYLES` / `BOY_NAMES`（中文）、`EN_STORY_STYLES` / `EN_BOY_NAMES`（英文）。
 - **故事长度 / 推送时间**：改 prompt 中的字数、`wrangler.toml` 的 `crons`（仍按 UTC 写）。
 
 ---

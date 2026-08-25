@@ -1,10 +1,10 @@
 // 004-少年夜话 — Cloudflare Worker
-// 每日北京 20:00（Cron）或 Telegram 手动 /story 触发：
-// 生成「男孩第一人称」~300 字故事 + 中文男声音频（Edge TTS），推送到一个或多个 Telegram chat。
+// 每日北京 20:00（Cron）或 Telegram 手动 /story（中文）/ /story-en（英文）触发：
+// 生成「男孩第一人称」~300 字/词故事 + 男声音频（Edge TTS），推送到一个或多个 Telegram chat。
 //
 // 绑定：AI（Workers AI 文本生成）、STORY_KV（KV 防重发/历史）
-// 变量：TELEGRAM_CHAT_IDS（逗号分隔多 chat）、TEXT_MODEL、TTS_VOICE
-// 密钥：TELEGRAM_BOT_TOKEN、TG_WEBHOOK_SECRET（可选）
+// 变量：TELEGRAM_CHAT_IDS（逗号分隔多 chat）、TEXT_MODEL、TTS_VOICE（中文）、TTS_VOICE_EN（英文）
+// 密钥：TELEGRAM_BOT_TOKEN、TG_WEBHOOK_SECRET（可选）、ADMIN_TOKEN（/test 鉴权，可选）
 
 // ---------- 风格池 / 男孩名字池 ----------
 const STORY_STYLES = [
@@ -13,6 +13,14 @@ const STORY_STYLES = [
   "动物伙伴", "成长小记",
 ];
 const BOY_NAMES = ["小宇", "小天", "阿豆", "小树", "阳阳", "小满", "石头", "小野"];
+
+// 英文故事：风格池 / 男孩名字池
+const EN_STORY_STYLES = [
+  "warm family", "fairy tale", "sci-fi adventure", "school life",
+  "nature & science", "outdoor adventure", "friendship", "fantasy",
+  "animal friends", "growing up",
+];
+const EN_BOY_NAMES = ["Leo", "Max", "Tom", "Alex", "Ethan", "Sam", "Oliver", "Noah"];
 
 // ---------- Edge TTS 常量 ----------
 const TRUSTED_CLIENT_TOKEN = "6A5AA1D4EAFF4E9FB37E23D68491D6F4";
@@ -77,9 +85,9 @@ function escapeXml(s) {
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&apos;");
 }
-function mkssml(text, voice) {
+function mkssml(text, voice, xmlLang = "zh-CN") {
   return (
-    "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='zh-CN'>" +
+    "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='" + xmlLang + "'>" +
     `<voice name='${voice}'>` +
     `<prosody pitch='+0Hz' rate='+0%' volume='+0%'>${escapeXml(text)}</prosody>` +
     "</voice></speak>"
@@ -109,25 +117,35 @@ function extractContent(res) {
 }
 
 // ---------- 1) 文本生成（Workers AI） ----------
-async function generateStory(env) {
-  const style = pick(STORY_STYLES);
-  const name = pick(BOY_NAMES);
+async function generateStory(env, lang = "zh") {
+  const isEn = lang === "en";
+  const style = pick(isEn ? EN_STORY_STYLES : STORY_STYLES);
+  const name = pick(isEn ? EN_BOY_NAMES : BOY_NAMES);
   const model = env.TEXT_MODEL || "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
 
-  const system = `你是一位用男孩口吻讲故事的温柔哥哥。请始终以第一人称"我"（一个名叫"${name}"的男孩）的视角来讲述。
+  const system = isEn
+    ? `You are a warm older brother telling stories in the first person as a boy named "${name}". Rules:
+1. Write a story of about 300 words in English, warm, positive, full of imagination, suitable for children and teens.
+2. Absolutely no horror, gore, thriller, violence, supernatural, or dark content.
+3. Today's tone is "${style}".
+4. Output only this JSON, nothing else: {"title": "a title of 3-10 words", "story": "the story text"}`
+    : `你是一位用男孩口吻讲故事的温柔哥哥。请始终以第一人称"我"（一个名叫"${name}"的男孩）的视角来讲述。
 要求：
 1. 故事约 300 字（中文），温暖、积极、充满想象力，适合少年与小朋友阅读。
 2. 绝对禁止恐怖、血腥、惊悚、暴力、灵异、阴暗内容。
 3. 今天的风格基调是「${style}」。
 4. 只输出如下 JSON，不要任何额外解释文字：{"title": "8-15字标题", "story": "故事正文"}`;
 
+  const userMsg = isEn ? "Please begin today's story." : "请开始今天的故事。";
+
   const res = await env.AI.run(model, {
     messages: [
       { role: "system", content: system },
-      { role: "user", content: "请开始今天的故事。" },
+      { role: "user", content: userMsg },
     ],
     response_format: { type: "json_object" },
     temperature: 0.9,
+    max_tokens: 1024,
   });
 
   const raw = extractContent(res);
@@ -136,7 +154,7 @@ async function generateStory(env) {
   let title = "";
   let story = "";
 
-  // 1) 尝试 JSON 解析（兼容 story 为字符串/对象/数组等结构）
+  // 1) 完整 JSON（兼容 story 为字符串/对象/数组等结构）
   try {
     const j = JSON.parse(text);
     if (j && typeof j === "object") {
@@ -150,22 +168,42 @@ async function generateStory(env) {
     }
   } catch {}
 
-  // 2) 兜底：按「标题/正文」标记正则提取
-  if (!story) {
-    const mTitle = text.match(/标题[：:]\s*([^\n]{2,30})/);
-    const mStory = text.match(/正文[：:]\s*([\s\S]+)/);
-    if (mTitle) title = mTitle[1].trim();
-    if (mStory) story = mStory[1].trim();
+  // 2) 兜底：从「残缺/被截断的 JSON」里正则抠出 title / story
+  if (!title) {
+    const m = text.match(/"title"\s*:\s*"([^"]*)"/);
+    if (m) title = m[1].trim();
   }
-  if (!story) story = text;
-  if (!title) title = `${name}的${style}`;
+  if (!story) {
+    const m = text.match(/"story"\s*:\s*"([\s\S]*)/);
+    if (m) story = m[1].replace(/["}\s]+$/, "").trim();
+  }
 
-  return { title: title.trim(), story: story.trim(), style, name };
+  // 3) 兜底：中文「标题/正文」标记
+  if (!title) {
+    const m = text.match(/标题[：:]\s*([^\n]{2,30})/);
+    if (m) title = m[1].trim();
+  }
+  if (!story) {
+    const m = text.match(/正文[：:]\s*([\s\S]+)/);
+    if (m) story = m[1].trim();
+  }
+
+  // 4) 最后兜底：去掉可能的 JSON 包装头尾，只留正文
+  if (!story) {
+    story = text
+      .replace(/^\s*\{?\s*"title"\s*:\s*"[^"]*"\s*,\s*"story"\s*:\s*"/, "")
+      .replace(/["}\s]+$/, "")
+      .trim();
+  }
+  if (!title) title = isEn ? `${name}'s ${style}` : `${name}的${style}`;
+
+  return { title: title.trim(), story: story.trim(), style, name, lang };
 }
 
-// ---------- 2) 中文男声 TTS（Microsoft Edge TTS，免费） ----------
-// 返回 MP3 字节（Uint8Array）
-async function edgeTts(text, voice) {
+// ---------- 2) TTS（Microsoft Edge TTS，免费） ----------
+// 返回 MP3 字节（Uint8Array）；lang: "zh" | "en"
+async function edgeTts(text, voice, lang = "zh") {
+  const xmlLang = lang === "en" ? "en-US" : "zh-CN";
   const gec = await secMsGec();
   const wsUrl =
     `${EDGE_WSS}?TrustedClientToken=${TRUSTED_CLIENT_TOKEN}` +
@@ -204,7 +242,7 @@ async function edgeTts(text, voice) {
       "Content-Type:application/ssml+xml\r\n" +
       `X-Timestamp:${dateToString()}Z\r\n` +
       "Path:ssml\r\n\r\n" +
-      mkssml(text, voice)
+      mkssml(text, voice, xmlLang)
   );
 
   const chunks = [];
@@ -270,7 +308,7 @@ async function sendAudio(env, chatId, caption, mp3Bytes) {
 }
 
 // ---------- 主流程 ----------
-async function runOnce(env, { force = false, chatIds = null } = {}) {
+async function runOnce(env, { force = false, chatIds = null, lang = "zh" } = {}) {
   const today = beijingDate();
   const targets = chatIds && chatIds.length ? chatIds : getChatIds(env);
 
@@ -281,15 +319,20 @@ async function runOnce(env, { force = false, chatIds = null } = {}) {
     if (last === today) return { skipped: true, reason: "already sent today", date: today };
   }
 
-  const meta = await generateStory(env);
-  const voice = env.TTS_VOICE || "zh-CN-YunxiaNeural"; // 男孩声（云夏）
-  const caption = `🎧 ${meta.title}\n【风格：${meta.style}】`;
+  const isEn = lang === "en";
+  const meta = await generateStory(env, lang);
+  const voice = isEn
+    ? (env.TTS_VOICE_EN || "en-US-GuyNeural")        // 英文男声（Guy，年轻男声）
+    : (env.TTS_VOICE || "zh-CN-YunxiaNeural");       // 中文男孩声（云夏）
+  const caption = isEn
+    ? `🎧 ${meta.title}\n【Style: ${meta.style}】`
+    : `🎧 ${meta.title}\n【风格：${meta.style}】`;
 
-  // 音频失败时降级为纯文本，保证每日推送不中断
+  // 音频失败时降级为纯文本，保证推送不中断
   let audioOk = false;
   let audioError = null;
   try {
-    const mp3 = await edgeTts(meta.story, voice);
+    const mp3 = await edgeTts(meta.story, voice, lang);
     for (const id of targets) {
       await sendAudio(env, id, caption, mp3);
       await sendText(env, id, meta.story);
@@ -298,8 +341,9 @@ async function runOnce(env, { force = false, chatIds = null } = {}) {
   } catch (e) {
     audioError = e?.message || String(e);
     console.error("[tts] Edge TTS 失败，降级为纯文本：", audioError);
+    const note = isEn ? "\n\n(Audio generation failed, text only)" : "\n\n（音频生成失败，仅发送文本）";
     for (const id of targets) {
-      await sendText(env, id, `${caption}\n\n${meta.story}\n\n（音频生成失败，仅发送文本）`);
+      await sendText(env, id, `${caption}\n\n${meta.story}${note}`);
     }
   }
 
@@ -309,6 +353,7 @@ async function runOnce(env, { force = false, chatIds = null } = {}) {
   return {
     ok: true,
     date: today,
+    lang,
     style: meta.style,
     title: meta.title,
     chars: meta.story.length,
@@ -323,16 +368,24 @@ async function runOnce(env, { force = false, chatIds = null } = {}) {
 async function handleWebhook(env, body) {
   const msg = body?.message || body?.edited_message;
   if (!msg?.text || msg.chat?.id == null) return { ignored: true, reason: "no text" };
-  const text = msg.text.trim();
   const chatId = msg.chat.id;
-  const isCmd = text === "/story" || text === "/start" || text.startsWith("/story@");
-  if (!isCmd) return { ignored: true, reason: "not a trigger command" };
+  // 去掉可能携带的 @botusername 后缀
+  const cmd = msg.text.trim().split("@")[0].trim();
+
+  let lang = null;
+  if (cmd === "/story-en" || cmd === "/en" || cmd === "/enstory") lang = "en";
+  else if (cmd === "/story" || cmd === "/start") lang = "zh";
+  if (!lang) return { ignored: true, reason: "not a trigger command" };
+
   if (!isAuthorized(env, chatId)) {
     await sendText(env, chatId, "抱歉，你没有权限触发故事～");
     return { denied: true, chatId };
   }
-  await sendText(env, chatId, "收到，正在为你写今天的故事，稍等…");
-  return { triggered: true, chatId };
+  const reply = lang === "en"
+    ? "Got it! Writing today's English story, one moment…"
+    : "收到，正在为你写今天的故事，稍等…";
+  await sendText(env, chatId, reply);
+  return { triggered: true, chatId, lang };
 }
 
 export default {
@@ -352,7 +405,8 @@ export default {
         );
       }
       try {
-        const r = await runOnce(env, { force: true });
+        const lang = url.searchParams.get("lang") === "en" ? "en" : "zh";
+        const r = await runOnce(env, { force: true, lang });
         return new Response(JSON.stringify(r, null, 2), {
           headers: { "Content-Type": "application/json" },
         });
@@ -379,7 +433,7 @@ export default {
       const ack = await handleWebhook(env, body);
       if (ack.triggered) {
         ctx.waitUntil(
-          runOnce(env, { force: true, chatIds: [ack.chatId] }).catch((e) =>
+          runOnce(env, { force: true, chatIds: [ack.chatId], lang: ack.lang }).catch((e) =>
             console.error("[webhook]", e)
           )
         );
